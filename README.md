@@ -1,14 +1,14 @@
 # Dynoxide
 
-A lightweight DynamoDB emulator backed by SQLite. Runs as an HTTP server compatible with the AWS DynamoDB API, as an MCP server for coding agents, or embeds directly into Rust and iOS applications as a library.
+A DynamoDB emulator backed by SQLite. Runs as an HTTP server, an MCP server for coding agents, or embeds directly into Rust and iOS applications as a library.
 
 ## Why Dynoxide?
 
-DynamoDB Local requires Docker and a JVM. It takes <!-- prose:ddb_local_cold_start -->3–4 seconds<!-- /bench --> to cold-start, uses <!-- prose:ddb_local_idle_memory -->~163 MB<!-- /bench --> of memory at idle, and pulls a <!-- prose:ddb_local_image_size -->~225MB<!-- /bench --> Docker image. For CI pipelines running hundreds of integration tests, that overhead adds up. For local development, it means waiting for Docker and burning resources in the background.
+I built Dynoxide because DynamoDB Local is slow, heavy, and can't embed. It needs Docker and a JVM. That's <!-- prose:ddb_local_cold_start -->3-4 seconds<!-- /bench --> of cold-start, <!-- prose:ddb_local_idle_memory -->~163 MB<!-- /bench --> of memory at idle, and a <!-- prose:ddb_local_image_size -->~225MB<!-- /bench --> Docker image before you've done anything useful. If you're running integration tests, that's Docker starting, the JVM warming up, and your pipeline waiting.
 
-Dynoxide is a native binary. It starts in milliseconds, idles at <!-- prose:dynoxide_idle_memory -->~4.9 MB<!-- /bench -->, and ships as a <!-- prose:dynoxide_binary_size -->~5MB<!-- /bench --> download. Point any DynamoDB SDK at it and run your tests — same API, faster feedback loop.
+Dynoxide is a native binary. It starts in milliseconds, idles at <!-- prose:dynoxide_idle_memory -->~4.9 MB<!-- /bench -->, and ships as a <!-- prose:dynoxide_binary_size -->~5MB<!-- /bench --> download. Point any DynamoDB SDK at it and your tests just work.
 
-For Rust projects, Dynoxide also offers an **embedded mode**: direct API calls via `Database::memory()` with no HTTP layer at all. Each test gets an isolated in-memory database with zero startup cost. And because it compiles to a native library with no runtime dependencies, it runs on platforms where DynamoDB Local can't — including iOS.
+For Rust projects, there's also an **embedded mode** - direct API calls via `Database::memory()` with no HTTP layer at all. Each test gets an isolated in-memory database with zero startup cost. And because it compiles to a native library with no runtime dependencies, it runs on platforms where DynamoDB Local can't, including iOS.
 
 ### Performance
 
@@ -61,7 +61,7 @@ See [full results by tier](https://github.com/nubo-db/dynamodb-conformance#resul
 | Embeddable (Rust / iOS) | ✓ | — | — | — |
 | MCP server for agents | ✓ | — | — | — |
 
-LocalStack uses DynamoDB Local internally as its DynamoDB engine — its startup and memory overhead includes DynamoDB Local's JVM plus LocalStack's own Python routing layer.
+LocalStack uses DynamoDB Local internally as its DynamoDB engine, so its startup and memory overhead includes DynamoDB Local's JVM plus LocalStack's own Python routing layer.
 
 ## Installation
 
@@ -94,7 +94,7 @@ cargo install dynoxide-rs --no-default-features --features encrypted-full
 
 ```toml
 [dependencies]
-# Minimal — just the embedded database, no server or CLI dependencies
+# Minimal - just the embedded database, no server or CLI dependencies
 dynoxide-rs = { version = "0.9", default-features = false, features = ["native-sqlite"] }
 
 # Or with encryption:
@@ -156,7 +156,7 @@ aws dynamodb get-item \
   --key '{"pk": {"S": "user#1"}}'
 ```
 
-Works with any language or SDK that supports custom endpoints — Python (boto3), Node.js (AWS SDK v3), Go, Java, etc.
+Works with any language or SDK that supports custom endpoints: Python (boto3), Node.js (AWS SDK v3), Go, Java, etc.
 
 ## MCP Server
 
@@ -235,7 +235,7 @@ With a OneTable data model for single-table designs:
 ### Safety options
 
 ```sh
-# Read-only mode — rejects all write operations
+# Read-only mode - rejects all write operations
 dynoxide mcp --read-only --db-path prod-snapshot.db
 
 # Limit query/scan results
@@ -246,9 +246,9 @@ dynoxide mcp --max-items 100 --max-size-bytes 65536
 
 The MCP server supports database snapshots for safe experimentation:
 
-- `create_snapshot` — saves a point-in-time copy of the database
-- `restore_snapshot` — rolls back to a previous snapshot
-- `list_snapshots` — lists available snapshots
+- `create_snapshot` - saves a point-in-time copy of the database
+- `restore_snapshot` - rolls back to a previous snapshot
+- `list_snapshots` - lists available snapshots
 - Auto-snapshot before `delete_table` (last 10 kept automatically)
 
 ### Data Model Context
@@ -260,50 +260,7 @@ dynoxide mcp --data-model schema.json
 dynoxide mcp --data-model schema.json --db-path data.db
 ```
 
-With `--data-model`, the MCP instructions include a compact entity summary and `get_database_info` returns the full model:
-
-```json
-{
-  "data_model": {
-    "schema_format": "onetable:1.1.0",
-    "type_attribute": "_type",
-    "entities": [
-      {
-        "name": "Account",
-        "pk_template": "account#${id}",
-        "sk_template": "account#",
-        "type_attribute": "_type",
-        "gsi_mappings": []
-      },
-      {
-        "name": "User",
-        "pk_template": "account#${accountId}",
-        "sk_template": "user#${email}",
-        "type_attribute": "_type",
-        "gsi_mappings": [
-          { "index_name": "GSI1", "pk_template": "user#${email}", "sk_template": "user#" }
-        ]
-      }
-    ]
-  }
-}
-```
-
-The agent knows which entity types exist, how their keys are structured, and which GSI to query for a given access pattern — before making a single query.
-
-**Index name resolution:** OneTable uses shorthand keys internally (e.g. `gs1`). If the index definition includes a `name` field (e.g. `"name": "GSI1"`), the parser uses the DynamoDB-facing name so it matches `describe_table` output and works directly with `query --index-name`.
-
-**Options:**
-
-```sh
-# Control how many entities appear in MCP instructions (default: 20, 0 = suppress)
-dynoxide mcp --data-model schema.json --data-model-summary-limit 10
-
-# With serve --mcp (uses --mcp-data-model prefix)
-dynoxide serve --mcp --mcp-data-model schema.json
-```
-
-The data model is context-only — dynoxide does not validate writes against the schema. The instructions note this explicitly so agents don't assume enforcement.
+The data model is context-only - dynoxide does not validate writes against the schema. See [docs/mcp-data-model.md](docs/mcp-data-model.md) for the full format reference, options, and examples.
 
 ## DynamoDB Streams
 
@@ -352,7 +309,7 @@ aws dynamodbstreams get-shard-iterator \
 
 ### Streams with import
 
-If the `--schema` file (DescribeTable JSON) contains a `StreamSpecification`, streams are automatically enabled on the imported table. No extra flags needed — the import faithfully reproduces the source table's configuration:
+If the `--schema` file (DescribeTable JSON) contains a `StreamSpecification`, streams are automatically enabled on the imported table. No extra flags needed. The import faithfully reproduces the source table's configuration:
 
 ```json
 {
@@ -534,7 +491,7 @@ fn test_user_creation() {
     let result = db.get_item(/* ... */).unwrap();
 
     assert!(result.item.is_some());
-    // db is dropped automatically — nothing to clean up
+    // db is dropped automatically - nothing to clean up
 }
 ```
 
@@ -553,7 +510,7 @@ No Docker. No port conflicts. No table name prefixes. Tests run in parallel with
 | `encrypted-full` | No | Convenience: enables `encryption` + `http-server` + `mcp-server` + `import`. |
 | `full` | — | Alias for default features (backward compatibility). |
 
-`native-sqlite` and `encryption` are **mutually exclusive** — they select different SQLite backends. To use encryption:
+`native-sqlite` and `encryption` are **mutually exclusive** - they select different SQLite backends. To use encryption:
 
 ```toml
 dynoxide-rs = { version = "0.9", default-features = false, features = ["encryption"] }
@@ -601,9 +558,9 @@ dynoxide-rs = { version = "0.9", default-features = false, features = ["encrypti
 
 Dynoxide's DynamoDB API semantics and validation logic were informed by [dynalite](https://github.com/architect/dynalite), the excellent DynamoDB emulator built on LevelDB by Michael Hart and now maintained by the Architect team.
 
-Dynoxide is a clean-room Rust implementation — no code was ported directly — but [dynalite](https://github.com/architect/dynalite)'s thorough approach to matching live DynamoDB behaviour, including edge cases and error messages, was an invaluable reference.
+Dynoxide is a clean-room Rust implementation. No code was ported directly, but [dynalite](https://github.com/architect/dynalite)'s thorough approach to matching live DynamoDB behaviour, including edge cases and error messages, was an invaluable reference.
 
-Dynoxide utilises SQLite as its storage layer. (A choice validated by AWS's [DynamoDB Local](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/DynamoDBLocal.html), which also uses SQLite internally.)
+Dynoxide uses SQLite as its storage layer. (AWS's [DynamoDB Local](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/DynamoDBLocal.html) also uses SQLite internally.)
 
 ## License
 
