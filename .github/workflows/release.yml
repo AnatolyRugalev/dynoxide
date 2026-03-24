@@ -103,13 +103,13 @@ jobs:
         run: |
           cd artifacts
           find . -type f \( -name "*.tar.gz" -o -name "*.zip" \) -exec mv {} . \;
-          sha256sum dynoxide-* > sha256sums.txt
+          sha256sum *.tar.gz *.zip > sha256sums.txt
           cat sha256sums.txt
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            artifacts/dynoxide-*.tar.gz
-            artifacts/dynoxide-*.zip
+            artifacts/*.tar.gz
+            artifacts/*.zip
             artifacts/sha256sums.txt
