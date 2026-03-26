@@ -1,0 +1,41 @@
+#!/usr/bin/env node
+
+"use strict";
+
+const os = require("os");
+const { spawnSync } = require("child_process");
+const { getBinaryPath } = require("../lib/platform");
+
+const binaryPath = getBinaryPath();
+
+const result = spawnSync(binaryPath, process.argv.slice(2), {
+  stdio: "inherit",
+});
+
+if (result.error) {
+  if (result.error.code === "ENOENT") {
+    console.error(
+      `Could not find the Dynoxide binary at: ${binaryPath}\n` +
+        `The platform package may be corrupted. Try reinstalling: npm install dynoxide`
+    );
+  } else if (result.error.code === "EACCES") {
+    console.error(
+      `Permission denied running: ${binaryPath}\n` +
+        `Try: chmod +x "${binaryPath}"`
+    );
+  } else {
+    console.error(`Failed to run Dynoxide: ${result.error.message}`);
+  }
+  process.exit(1);
+}
+
+// If the child was killed by a signal, re-raise it so the parent exits correctly.
+// process.kill is async, so follow with process.exit as a fallback in case the
+// signal is caught or does not terminate the process.
+if (result.signal) {
+  process.kill(process.pid, result.signal);
+  const signum = os.constants.signals[result.signal] || 0;
+  process.exit(128 + signum);
+}
+
+process.exit(result.status ?? 1);

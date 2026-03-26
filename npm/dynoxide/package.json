@@ -1,0 +1,42 @@
+{
+  "name": "dynoxide",
+  "version": "0.0.0-development",
+  "description": "Embedded DynamoDB-compatible engine. Drop-in dynalite replacement.",
+  "author": "Martin Hicks",
+  "license": "(MIT OR Apache-2.0)",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nubo-db/dynoxide"
+  },
+  "homepage": "https://dynoxide.dev",
+  "keywords": [
+    "dynamodb",
+    "dynalite",
+    "dynamodb-local",
+    "testing",
+    "database",
+    "emulator",
+    "dynamodb-emulator"
+  ],
+  "engines": {
+    "node": ">=16"
+  },
+  "bin": {
+    "dynoxide": "bin/dynoxide"
+  },
+  "files": [
+    "bin/",
+    "lib/",
+    "platforms.json",
+    "LICENSE-MIT",
+    "LICENSE-APACHE"
+  ],
+  "optionalDependencies": {
+    "@dynoxide/darwin-x64": "0.0.0-development",
+    "@dynoxide/darwin-arm64": "0.0.0-development",
+    "@dynoxide/linux-x64": "0.0.0-development",
+    "@dynoxide/linux-x64-musl": "0.0.0-development",
+    "@dynoxide/linux-arm64": "0.0.0-development",
+    "@dynoxide/win32-x64": "0.0.0-development"
+  }
+}

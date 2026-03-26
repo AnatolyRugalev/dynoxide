@@ -1,0 +1,56 @@
+[
+  {
+    "npm_package": "@dynoxide/darwin-x64",
+    "rust_target": "x86_64-apple-darwin",
+    "os": "darwin",
+    "cpu": "x64",
+    "libc": null,
+    "archive_ext": "tar.gz",
+    "binary_name": "dynoxide"
+  },
+  {
+    "npm_package": "@dynoxide/darwin-arm64",
+    "rust_target": "aarch64-apple-darwin",
+    "os": "darwin",
+    "cpu": "arm64",
+    "libc": null,
+    "archive_ext": "tar.gz",
+    "binary_name": "dynoxide"
+  },
+  {
+    "npm_package": "@dynoxide/linux-x64",
+    "rust_target": "x86_64-unknown-linux-gnu",
+    "os": "linux",
+    "cpu": "x64",
+    "libc": "glibc",
+    "archive_ext": "tar.gz",
+    "binary_name": "dynoxide"
+  },
+  {
+    "npm_package": "@dynoxide/linux-x64-musl",
+    "rust_target": "x86_64-unknown-linux-musl",
+    "os": "linux",
+    "cpu": "x64",
+    "libc": "musl",
+    "archive_ext": "tar.gz",
+    "binary_name": "dynoxide"
+  },
+  {
+    "npm_package": "@dynoxide/linux-arm64",
+    "rust_target": "aarch64-unknown-linux-gnu",
+    "os": "linux",
+    "cpu": "arm64",
+    "libc": "glibc",
+    "archive_ext": "tar.gz",
+    "binary_name": "dynoxide"
+  },
+  {
+    "npm_package": "@dynoxide/win32-x64",
+    "rust_target": "x86_64-pc-windows-msvc",
+    "os": "win32",
+    "cpu": "x64",
+    "libc": null,
+    "archive_ext": "zip",
+    "binary_name": "dynoxide.exe"
+  }
+]

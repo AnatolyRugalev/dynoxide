@@ -65,6 +65,18 @@ LocalStack uses DynamoDB Local internally as its DynamoDB engine, so its startup
 
 ## Installation
 
+### npm
+
+```sh
+npm install --save-dev dynoxide
+```
+
+Or run directly without installing:
+
+```sh
+npx dynoxide serve --port 8000
+```
+
 ### Homebrew (macOS)
 
 ```sh
