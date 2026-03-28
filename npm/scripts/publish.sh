@@ -51,19 +51,21 @@ fi
 echo ""
 
 # Generate THIRD_PARTY_LICENSES if cargo-about is available
+REPO_ROOT="$(cd "$NPM_DIR/.." && pwd)"
 THIRD_PARTY_LICENSES=""
-if command -v cargo-about &>/dev/null && [[ -f "$NPM_DIR/../Cargo.toml" ]]; then
+if command -v cargo-about &>/dev/null && [[ -f "$REPO_ROOT/Cargo.toml" ]]; then
   echo "Generating THIRD_PARTY_LICENSES..."
   THIRD_PARTY_LICENSES="$WORK_DIR/THIRD_PARTY_LICENSES"
-  cargo about generate --manifest-path "$NPM_DIR/../Cargo.toml" \
-    --format json 2>/dev/null \
-    | jq -r '
-      .licenses[]
-      | "License: \(.id)\nUsed by: \(.used_by | map(.crate.name + " " + .crate.version) | join(", "))\n"
-    ' > "$THIRD_PARTY_LICENSES" 2>/dev/null || {
+  if cargo about generate \
+    --manifest-path "$REPO_ROOT/Cargo.toml" \
+    --config "$REPO_ROOT/about.toml" \
+    "$REPO_ROOT/about.hbs" \
+    -o "$THIRD_PARTY_LICENSES" 2>/dev/null; then
+    echo "  Generated $(wc -l < "$THIRD_PARTY_LICENSES" | tr -d ' ') lines"
+  else
     echo "Warning: could not generate THIRD_PARTY_LICENSES, continuing without it"
     THIRD_PARTY_LICENSES=""
-  }
+  fi
 fi
 
 # Publish each platform package

@@ -56,13 +56,11 @@ pub async fn serve_http_with_shutdown(
     let ct = shutdown.unwrap_or_default();
     let db = Arc::new(db);
 
-    let http_config = StreamableHttpServerConfig {
-        stateful_mode: false,
-        json_response: true,
-        sse_keep_alive: None,
-        cancellation_token: ct.clone(),
-        ..Default::default()
-    };
+    let mut http_config = StreamableHttpServerConfig::default();
+    http_config.stateful_mode = false;
+    http_config.json_response = true;
+    http_config.sse_keep_alive = None;
+    http_config.cancellation_token = ct.clone();
 
     let service: StreamableHttpService<McpServer, LocalSessionManager> = StreamableHttpService::new(
         {

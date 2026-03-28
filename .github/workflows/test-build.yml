@@ -1,21 +1,17 @@
-name: Release
+name: Test Build
 
 on:
-  push:
-    tags:
-      - "v*"
-
-permissions:
-  contents: write
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
   build:
-    if: github.repository == 'nubo-db/dynoxide'
+    if: github.repository == 'nubo-db/dynoxide-development'
     name: Build (${{ matrix.target }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
 
     strategy:
       fail-fast: false
@@ -84,32 +80,3 @@ jobs:
         with:
           name: dynoxide-${{ matrix.target }}
           path: dynoxide-${{ matrix.target }}.${{ matrix.archive }}
-
-  release:
-    if: github.repository == 'nubo-db/dynoxide'
-    name: Create Release
-    needs: build
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-
-      - name: Create checksums
-        run: |
-          cd artifacts
-          find . -type f \( -name "*.tar.gz" -o -name "*.zip" \) -exec mv {} . \;
-          sha256sum *.tar.gz *.zip > sha256sums.txt
-          cat sha256sums.txt
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            artifacts/*.tar.gz
-            artifacts/*.zip
-            artifacts/sha256sums.txt

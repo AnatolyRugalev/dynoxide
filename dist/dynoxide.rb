@@ -26,12 +26,12 @@ class Dynoxide < Formula
 
   on_linux do
     on_arm do
-      url "https://github.com/nubo-db/dynoxide/releases/download/v#{version}/dynoxide-aarch64-unknown-linux-gnu.tar.gz"
+      url "https://github.com/nubo-db/dynoxide/releases/download/v#{version}/dynoxide-aarch64-unknown-linux-musl.tar.gz"
       sha256 "PLACEHOLDER"
     end
 
     on_intel do
-      url "https://github.com/nubo-db/dynoxide/releases/download/v#{version}/dynoxide-x86_64-unknown-linux-gnu.tar.gz"
+      url "https://github.com/nubo-db/dynoxide/releases/download/v#{version}/dynoxide-x86_64-unknown-linux-musl.tar.gz"
       sha256 "PLACEHOLDER"
     end
   end

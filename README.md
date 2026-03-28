@@ -85,11 +85,11 @@ brew install nubo-db/tap/dynoxide
 
 ### Pre-built binaries
 
-Download from [GitHub Releases](https://github.com/nubo-db/dynoxide/releases) for Linux (x86_64, aarch64, musl), macOS (Intel, Apple Silicon), and Windows.
+Download from [GitHub Releases](https://github.com/nubo-db/dynoxide/releases) for Linux (x86_64, aarch64), macOS (Intel, Apple Silicon), and Windows.
 
 ```sh
 # Example: Linux x86_64
-curl -fsSL https://github.com/nubo-db/dynoxide/releases/latest/download/dynoxide-x86_64-unknown-linux-gnu.tar.gz | tar xz
+curl -fsSL https://github.com/nubo-db/dynoxide/releases/latest/download/dynoxide-x86_64-unknown-linux-musl.tar.gz | tar xz
 sudo mv dynoxide /usr/local/bin/
 ```
 

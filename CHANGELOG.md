@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.6] - 2026-03-27
+
+### Fixed
+
+- Statically link the MSVC C runtime on Windows so the release binary no longer requires VCRUNTIME140.dll
+- Switch Linux aarch64 target to musl for fully static binaries (matching x86_64)
+
+### Changed
+
+- Drop the separate x86_64-unknown-linux-gnu release target (the musl build is already fully portable)
+
 ## [0.9.5] - 2026-03-24
 
 ### Added

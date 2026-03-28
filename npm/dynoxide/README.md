@@ -58,7 +58,7 @@ dynoxide mcp
 | Platform | Architecture |
 |---|---|
 | macOS | x64, arm64 (Apple Silicon) |
-| Linux | x64 (glibc), x64 (musl/Alpine), arm64 |
+| Linux | x64, arm64 |
 | Windows | x64 |
 
 ## How It Works

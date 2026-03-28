@@ -1,0 +1,18 @@
+THIRD-PARTY SOFTWARE NOTICES AND INFORMATION
+
+Dynoxide incorporates components from the projects listed below.
+The original copyright notices and licence texts are provided below.
+
+{{#each licenses}}
+================================================================================
+{{name}} ({{id}})
+================================================================================
+
+Used by:
+{{#each used_by}}
+  - {{crate.name}} {{crate.version}}
+{{/each}}
+
+{{{text}}}
+
+{{/each}}
