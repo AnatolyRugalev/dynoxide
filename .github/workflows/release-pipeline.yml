@@ -360,7 +360,7 @@ jobs:
           gh api "repos/${{ github.repository }}/git/refs/heads/${BRANCH}" \
             -X PATCH \
             -f sha="${NEW_SHA}" \
-            -f force=false
+            -F force=false
 
           echo "Committed README update: ${NEW_SHA}"
 
