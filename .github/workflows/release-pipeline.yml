@@ -755,35 +755,36 @@ jobs:
             --jq '.commit.html_url'
 
   # ---------------------------------------------------------------------------
-  # Publish npm packages
+  # Trigger npm publish workflow (uses OIDC trusted publishing via npm.yml)
   # ---------------------------------------------------------------------------
   publish-npm:
     if: github.repository == 'nubo-db/dynoxide'
-    name: Publish to npm
+    name: Trigger npm publish
     needs: [validate, tag-and-release]
     runs-on: ubuntu-latest
-    timeout-minutes: 15
 
     env:
       VERSION_TAG: ${{ needs.validate.outputs.version_tag }}
 
     steps:
-      - name: Checkout tagged commit
-        uses: actions/checkout@v4
+      - name: Mint App token
+        id: app-token
+        uses: actions/create-github-app-token@v3
         with:
-          ref: ${{ env.VERSION_TAG }}
+          app-id: ${{ vars.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          registry-url: "https://registry.npmjs.org"
-
-      - name: Install jq
-        run: sudo apt-get install -y jq
-
-      - name: Publish to npm
+      - name: Trigger npm.yml workflow
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
-          VERSION="${VERSION_TAG#v}"
-          npm/scripts/publish.sh \
-            --version "$VERSION" \
-            --release-url "https://github.com/nubo-db/dynoxide/releases/download/${VERSION_TAG}"
+          gh api "repos/${{ github.repository }}/actions/workflows/npm.yml/dispatches" \
+            -f ref=main \
+            --input - <<PAYLOAD
+          {
+            "inputs": {
+              "tag": "${VERSION_TAG}"
+            }
+          }
+          PAYLOAD
+          echo "Triggered npm.yml with tag ${VERSION_TAG}"

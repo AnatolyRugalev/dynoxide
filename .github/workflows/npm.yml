@@ -60,6 +60,7 @@ jobs:
         env:
           PUBLISH_VERSION: ${{ steps.version.outputs.version }}
           PUBLISH_TAG: ${{ steps.version.outputs.tag }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           npm/scripts/publish.sh \
             --version "$PUBLISH_VERSION" \
