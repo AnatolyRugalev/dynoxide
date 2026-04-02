@@ -58,6 +58,7 @@ jobs:
 
       - name: Publish to npm
         env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           PUBLISH_VERSION: ${{ steps.version.outputs.version }}
           PUBLISH_TAG: ${{ steps.version.outputs.tag }}
         run: |
