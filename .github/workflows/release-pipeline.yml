@@ -682,7 +682,7 @@ jobs:
   # ---------------------------------------------------------------------------
   publish-homebrew:
     if: github.repository == 'nubo-db/dynoxide'
-    name: Update Homebrew tap
+    name: Trigger Homebrew tap update
     needs: [validate, tag-and-release]
     runs-on: ubuntu-latest
 
@@ -690,66 +690,20 @@ jobs:
       VERSION_TAG: ${{ needs.validate.outputs.version_tag }}
 
     steps:
-      - name: Checkout tagged commit
-        uses: actions/checkout@v4
+      - name: Mint App token
+        id: app-token
+        uses: actions/create-github-app-token@v3
         with:
-          ref: ${{ env.VERSION_TAG }}
-
-      - name: Download checksums from release
+          app-id: ${{ vars.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+      - name: Trigger homebrew.yml workflow
         env:
-          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
-          gh release download "$VERSION_TAG" \
-            --repo "${{ github.repository }}" \
-            --pattern 'sha256sums.txt' \
-            --output sha256sums.txt
-
-      - name: Build formula from template
-        run: |
-          VERSION="${VERSION_TAG#v}"
-
-          SHA_DARWIN_ARM64=$(grep 'aarch64-apple-darwin' sha256sums.txt | awk '{print $1}')
-          SHA_DARWIN_X64=$(grep 'x86_64-apple-darwin' sha256sums.txt | awk '{print $1}')
-          SHA_LINUX_ARM64=$(grep 'aarch64-unknown-linux-musl' sha256sums.txt | awk '{print $1}')
-          SHA_LINUX_X64=$(grep 'x86_64-unknown-linux-musl' sha256sums.txt | awk '{print $1}')
-
-          for var in SHA_DARWIN_ARM64 SHA_DARWIN_X64 SHA_LINUX_ARM64 SHA_LINUX_X64; do
-            if [[ -z "${!var}" ]]; then
-              echo "::error::Missing checksum for $var"
-              exit 1
-            fi
-          done
-
-          sed -e "s/version \".*\"/version \"$VERSION\"/" \
-              dist/dynoxide.rb \
-            | awk -v da="$SHA_DARWIN_ARM64" \
-                  -v dx="$SHA_DARWIN_X64" \
-                  -v la="$SHA_LINUX_ARM64" \
-                  -v lx="$SHA_LINUX_X64" '
-            /aarch64-apple-darwin/ { getline; sub(/"PLACEHOLDER"/, "\"" da "\"") }
-            /x86_64-apple-darwin/  { getline; sub(/"PLACEHOLDER"/, "\"" dx "\"") }
-            /aarch64-unknown-linux-musl/ { getline; sub(/"PLACEHOLDER"/, "\"" la "\"") }
-            /x86_64-unknown-linux-musl/  { getline; sub(/"PLACEHOLDER"/, "\"" lx "\"") }
-            { print }
-          ' > formula.rb
-
-          echo "Generated formula:"
-          cat formula.rb
-
-      - name: Push formula to tap
-        env:
-          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-        run: |
-          VERSION="${VERSION_TAG#v}"
-
-          CURRENT_SHA=$(gh api repos/nubo-db/homebrew-tap/contents/Formula/dynoxide.rb --jq '.sha')
-
-          gh api repos/nubo-db/homebrew-tap/contents/Formula/dynoxide.rb \
-            -X PUT \
-            --field message="dynoxide $VERSION" \
-            --field content="$(base64 -w0 formula.rb)" \
-            --field sha="$CURRENT_SHA" \
-            --jq '.commit.html_url'
+          gh api "repos/${{ github.repository }}/actions/workflows/homebrew.yml/dispatches" \
+            -f ref=main \
+            -f "inputs[tag]=${VERSION_TAG}"
+          echo "Triggered homebrew.yml with tag ${VERSION_TAG}"
 
   # ---------------------------------------------------------------------------
   # Trigger npm publish workflow (uses OIDC trusted publishing via npm.yml)
