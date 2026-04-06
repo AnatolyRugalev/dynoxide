@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.8] - 2026-04-06
+
+### Fixed
+
+- Dynoxide no longer orphans when backgrounded in npm scripts (`dynoxide & sleep 1 && npm run seed && react-router dev`) -- the port is released when the parent process exits ([nubo-db/dynoxide#2](https://github.com/nubo-db/dynoxide/issues/2))
+- The Rust server now handles SIGTERM for graceful shutdown, not just SIGINT (Ctrl+C) -- `kill <pid>` now works as expected
+- The npm wrapper switches from `spawnSync` to async `spawn` with explicit signal forwarding (SIGINT, SIGTERM, SIGHUP) and double-signal SIGKILL escalation
+- Parent-death detection via PPID polling catches the backgrounded case where no signal is delivered to the wrapper
+
 ## [0.9.7] - 2026-04-02
 
 ### Fixed
