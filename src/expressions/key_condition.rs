@@ -32,8 +32,12 @@ pub enum SortKeyCondition {
 }
 
 /// Parse a KeyConditionExpression string, tracking attribute name usage.
+///
+/// Supports optional parentheses around individual conditions and around
+/// the entire expression, matching DynamoDB behavior.
 pub fn parse(expr: &str, tracker: &TrackedExpressionAttributes) -> Result<KeyCondition, String> {
     let tokens = tokenize(expr).map_err(|e| format!("Invalid KeyConditionExpression: {e}"))?;
+    let tokens = strip_outer_parens(tokens);
     let mut stream = TokenStream::new(tokens);
 
     let cond1 = parse_single_condition(&mut stream, tracker)?;
@@ -247,10 +251,57 @@ impl ParsedCond {
     }
 }
 
+/// Strip balanced outer parentheses from a token list.
+/// `(pk = :pk AND sk = :sk)` → `pk = :pk AND sk = :sk`
+/// `((pk = :pk))` → `pk = :pk` (applied repeatedly)
+/// `(pk = :pk) AND (sk = :sk)` → unchanged (closing paren is not at the end)
+fn strip_outer_parens(mut tokens: Vec<Token>) -> Vec<Token> {
+    loop {
+        if tokens.len() < 2 {
+            break;
+        }
+        if !matches!(tokens.first(), Some(Token::LParen)) {
+            break;
+        }
+        // Walk forward, tracking paren depth, to see if the opening paren's
+        // match is the very last token.
+        let mut depth = 0;
+        let mut close_pos = None;
+        for (i, tok) in tokens.iter().enumerate() {
+            match tok {
+                Token::LParen => depth += 1,
+                Token::RParen => {
+                    depth -= 1;
+                    if depth == 0 {
+                        close_pos = Some(i);
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        if close_pos == Some(tokens.len() - 1) {
+            // The outermost parens wrap the entire expression — strip them.
+            tokens.remove(tokens.len() - 1);
+            tokens.remove(0);
+        } else {
+            break;
+        }
+    }
+    tokens
+}
+
 fn parse_single_condition(
     stream: &mut TokenStream,
     tracker: &TrackedExpressionAttributes,
 ) -> Result<ParsedCond, String> {
+    // Count and skip optional wrapping parentheses: `(pk = :pk)`, `((pk = :pk))`
+    let mut parens = 0;
+    while matches!(stream.peek(), Some(Token::LParen)) {
+        stream.next();
+        parens += 1;
+    }
+
     // Check for begins_with function
     if let Some(Token::Identifier(name)) = stream.peek() {
         if name.to_lowercase() == "begins_with" {
@@ -261,6 +312,7 @@ fn parse_single_condition(
             stream.expect(&Token::Comma)?;
             let val_ref = expect_value_ref(stream)?;
             stream.expect(&Token::RParen)?;
+            consume_close_parens(stream, parens)?;
             return Ok(ParsedCond::BeginsWith(attr_name, val_ref));
         }
     }
@@ -269,7 +321,7 @@ fn parse_single_condition(
     let path = parse_raw_path(stream)?;
     let attr_name = resolve_path_to_name(&path, tracker)?;
 
-    match stream.next() {
+    let result = match stream.next() {
         Some(Token::Eq) => {
             let val_ref = expect_value_ref(stream)?;
             Ok(ParsedCond::Eq(attr_name, val_ref))
@@ -300,7 +352,31 @@ fn parse_single_condition(
             "Unexpected operator in KeyConditionExpression: {t}"
         )),
         None => Err("Unexpected end of KeyConditionExpression".to_string()),
+    };
+
+    consume_close_parens(stream, parens)?;
+    result
+}
+
+/// Consume exactly `count` closing parentheses from the stream.
+fn consume_close_parens(stream: &mut TokenStream, count: usize) -> Result<(), String> {
+    for _ in 0..count {
+        match stream.next() {
+            Some(Token::RParen) => {}
+            Some(t) => {
+                return Err(format!(
+                    "Expected closing parenthesis in KeyConditionExpression, got {t}"
+                ))
+            }
+            None => {
+                return Err(
+                    "Unexpected end of KeyConditionExpression, expected closing parenthesis"
+                        .to_string(),
+                )
+            }
+        }
     }
+    Ok(())
 }
 
 fn resolve_path_to_name(
@@ -451,6 +527,56 @@ mod tests {
             resolved.sk_condition,
             Some(ResolvedSortKeyCondition::Ge(_, _))
         ));
+    }
+
+    #[test]
+    fn test_parenthesized_conditions() {
+        let no_names = None;
+        let no_values = None;
+
+        // Parens around each condition
+        let tracker = make_tracker(&no_names, &no_values);
+        let kc = parse("(pk = :pk) AND (sk = :sk)", &tracker).unwrap();
+        assert_eq!(kc.pk_name, "pk");
+        assert!(matches!(kc.sk_condition, Some(SortKeyCondition::Eq(_, _))));
+
+        // Parens around entire expression
+        let tracker = make_tracker(&no_names, &no_values);
+        let kc = parse("(pk = :pk AND sk = :sk)", &tracker).unwrap();
+        assert_eq!(kc.pk_name, "pk");
+        assert!(matches!(kc.sk_condition, Some(SortKeyCondition::Eq(_, _))));
+
+        // Nested parens
+        let tracker = make_tracker(&no_names, &no_values);
+        let kc = parse("((pk = :pk)) AND ((sk > :sk))", &tracker).unwrap();
+        assert_eq!(kc.pk_name, "pk");
+        assert!(matches!(kc.sk_condition, Some(SortKeyCondition::Gt(_, _))));
+
+        // Multiple pairs: outer parens wrapping conditions with their own nested parens
+        let tracker = make_tracker(&no_names, &no_values);
+        let kc = parse("(((pk = :pk)) AND ((begins_with(sk, :prefix))))", &tracker).unwrap();
+        assert_eq!(kc.pk_name, "pk");
+        assert!(matches!(
+            kc.sk_condition,
+            Some(SortKeyCondition::BeginsWith(_, _))
+        ));
+
+        // Parens around begins_with
+        let tracker = make_tracker(&no_names, &no_values);
+        let kc = parse("(pk = :pk) AND (begins_with(sk, :prefix))", &tracker).unwrap();
+        assert!(matches!(
+            kc.sk_condition,
+            Some(SortKeyCondition::BeginsWith(_, _))
+        ));
+
+        // Parens with attribute name references
+        let an = Some(HashMap::from([
+            ("#pk".to_string(), "PK".to_string()),
+            ("#sk".to_string(), "SK".to_string()),
+        ]));
+        let tracker = make_tracker(&an, &no_values);
+        let kc = parse("(#pk = :pk) AND (#sk = :sk)", &tracker).unwrap();
+        assert_eq!(kc.pk_name, "PK");
     }
 
     #[test]
