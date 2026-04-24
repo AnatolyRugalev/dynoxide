@@ -8,7 +8,6 @@ permissions:
 
 jobs:
   criterion-benchmarks:
-    if: github.repository == 'nubo-db/dynoxide-development'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -134,7 +133,6 @@ jobs:
             }
 
   iai-benchmarks:
-    if: github.repository == 'nubo-db/dynoxide-development'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

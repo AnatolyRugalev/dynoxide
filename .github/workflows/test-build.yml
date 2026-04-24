@@ -8,7 +8,6 @@ env:
 
 jobs:
   build:
-    if: github.repository == 'nubo-db/dynoxide-development'
     name: Build (${{ matrix.target }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
