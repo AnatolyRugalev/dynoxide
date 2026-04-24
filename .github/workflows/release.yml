@@ -300,36 +300,27 @@ jobs:
             --jq '.commit.html_url'
 
   # -------------------------------------------------------------------
-  # Publish npm packages via OIDC trusted publishing.
+  # Trigger the npm publish workflow. npm.yml owns the OIDC trusted
+  # publisher configuration on npmjs.com, so the actual publish must run
+  # inside that workflow rather than inline here.
   # -------------------------------------------------------------------
   publish-npm:
-    name: Publish to npm
+    name: Trigger npm publish
     needs: [validate, publish-crate]
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 5
 
     permissions:
-      id-token: write
+      actions: write
       contents: read
 
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "24"
-
-      - name: Configure npm registry
-        run: npm config set registry https://registry.npmjs.org
-
-      - name: Install jq
-        run: sudo apt-get install -y jq
-
-      - name: Publish to npm
+      - name: Dispatch npm.yml with the release tag
         env:
-          PUBLISH_VERSION: ${{ needs.validate.outputs.version }}
-          PUBLISH_TAG: ${{ needs.validate.outputs.tag }}
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.validate.outputs.tag }}
         run: |
-          npm/scripts/publish.sh \
-            --version "$PUBLISH_VERSION" \
-            --release-url "https://github.com/nubo-db/dynoxide/releases/download/$PUBLISH_TAG"
+          gh api "repos/${{ github.repository }}/actions/workflows/npm.yml/dispatches" \
+            -f ref=main \
+            -f "inputs[tag]=$TAG"
+          echo "Dispatched npm.yml with tag $TAG"
