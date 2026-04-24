@@ -742,7 +742,10 @@ fn test_transact_update_condition_rejects_nonexistent_item() {
     });
     let get_req = serde_json::from_value(get_req).unwrap();
     let resp = db.get_item(get_req).unwrap();
-    assert!(resp.item.is_none(), "item should not exist after failed condition");
+    assert!(
+        resp.item.is_none(),
+        "item should not exist after failed condition"
+    );
 }
 
 /// Standalone UpdateItem with `attribute_exists(PK)` should also fail when
@@ -774,5 +777,8 @@ fn test_update_item_condition_rejects_nonexistent_item() {
     });
     let get_req = serde_json::from_value(get_req).unwrap();
     let resp = db.get_item(get_req).unwrap();
-    assert!(resp.item.is_none(), "item should not exist after failed condition");
+    assert!(
+        resp.item.is_none(),
+        "item should not exist after failed condition"
+    );
 }
