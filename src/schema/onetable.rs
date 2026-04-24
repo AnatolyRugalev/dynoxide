@@ -185,8 +185,8 @@ fn resolve_gsi_mappings(
     };
 
     let mut mappings: Vec<GsiMapping> = indexes
-        .iter()
-        .filter_map(|(_, idx_def)| {
+        .values()
+        .filter_map(|idx_def| {
             // Check if this model has the hash key attribute with a value template
             let pk_template = attrs
                 .get(&idx_def.hash_attr)
