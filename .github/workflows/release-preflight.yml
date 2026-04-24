@@ -1,0 +1,91 @@
+name: Release Preflight
+
+# Zero-touch auth dry-run for every external publish surface.
+# Run on demand before cutover and after any secret rotation.
+# Publishes nothing. Any failure here should be fixed before a real tag is pushed.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write  # required for npm OIDC provenance dry-run
+
+jobs:
+  preflight:
+    name: Release preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # --- crates.io -----------------------------------------------------
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: cargo publish --dry-run
+        id: cargo-check
+        continue-on-error: true
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish --dry-run
+
+      # --- npm OIDC ------------------------------------------------------
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Configure npm registry
+        run: npm config set registry https://registry.npmjs.org
+
+      - name: npm publish --dry-run --provenance (meta package)
+        id: npm-check
+        continue-on-error: true
+        working-directory: npm/dynoxide
+        run: npm publish --dry-run --provenance
+
+      # --- Homebrew tap --------------------------------------------------
+      - name: Probe Homebrew tap write access
+        id: homebrew-check
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          set -euo pipefail
+          PUSH=$(gh api repos/nubo-db/homebrew-tap --jq '.permissions.push // false')
+          echo "push_permission=$PUSH"
+          if [ "$PUSH" != "true" ]; then
+            echo "::error::HOMEBREW_TAP_TOKEN lacks push permission on nubo-db/homebrew-tap"
+            exit 1
+          fi
+          echo "Homebrew tap write access confirmed"
+
+      # --- Summary and final gate ---------------------------------------
+      - name: Preflight summary
+        if: always()
+        env:
+          CARGO_OUTCOME: ${{ steps.cargo-check.outcome }}
+          NPM_OUTCOME: ${{ steps.npm-check.outcome }}
+          HOMEBREW_OUTCOME: ${{ steps.homebrew-check.outcome }}
+        run: |
+          {
+            echo "## Release Preflight"
+            echo ""
+            echo "| Check | Result |"
+            echo "|-------|--------|"
+            echo "| cargo publish --dry-run | $CARGO_OUTCOME |"
+            echo "| npm publish --dry-run --provenance (meta) | $NPM_OUTCOME |"
+            echo "| Homebrew tap write-access probe | $HOMEBREW_OUTCOME |"
+            echo ""
+            echo "Run: ${{ github.run_id }}"
+            echo "Triggered by: ${{ github.actor }}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$CARGO_OUTCOME" != "success" ] || \
+             [ "$NPM_OUTCOME" != "success" ] || \
+             [ "$HOMEBREW_OUTCOME" != "success" ]; then
+            echo "::error::One or more preflight checks failed. See summary for details."
+            exit 1
+          fi
+          echo "All preflight checks passed."
