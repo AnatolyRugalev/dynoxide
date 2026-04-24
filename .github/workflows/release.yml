@@ -1,28 +1,87 @@
 name: Release
-# Fallback workflow. Primary release path is release-pipeline.yml.
+
+# Tag-triggered release pipeline. Push a v* tag on a commit where:
+#   - Cargo.toml version matches the tag
+#   - CHANGELOG.md has a matching ## [X.Y.Z] entry
+#   - CI has gone green
+# then let this workflow do the rest.
+#
+# Flow: validate -> build (5 targets) -> github-release -> publish-crate
+# (review gate) -> publish-homebrew + publish-npm in parallel.
 
 on:
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: "Release tag (e.g. v0.9.6)"
-        required: true
-        type: string
+  push:
+    tags:
+      - 'v*'
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
 
 permissions:
   contents: write
+  id-token: write
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # -------------------------------------------------------------------
+  # Validate Cargo.toml and CHANGELOG.md line up with the tag.
+  # -------------------------------------------------------------------
+  validate:
+    name: Validate tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+      tag: ${{ steps.resolve.outputs.tag }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version from tag
+        id: resolve
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
+            echo "::error::Invalid tag format: $TAG (expected vX.Y.Z or vX.Y.Z-pre.N)"
+            exit 1
+          fi
+          VERSION="${TAG#v}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Resolved tag=$TAG version=$VERSION"
+
+      - name: Check Cargo.toml version matches tag
+        env:
+          EXPECTED: ${{ steps.resolve.outputs.version }}
+        run: |
+          ACTUAL=$(grep -m1 '^version = ' Cargo.toml | cut -d'"' -f2)
+          echo "Cargo.toml version: $ACTUAL"
+          echo "Expected: $EXPECTED"
+          if [ "$ACTUAL" != "$EXPECTED" ]; then
+            echo "::error::Cargo.toml version ($ACTUAL) does not match tag ($EXPECTED)"
+            exit 1
+          fi
+
+      - name: Check CHANGELOG has entry for this version
+        env:
+          VERSION: ${{ steps.resolve.outputs.version }}
+        run: scripts/extract-changelog.sh "$VERSION" CHANGELOG.md > /dev/null
+
+  # -------------------------------------------------------------------
+  # Build release binaries for all targets.
+  # -------------------------------------------------------------------
   build:
-    if: github.repository == 'nubo-db/dynoxide'
     name: Build (${{ matrix.target }})
+    needs: validate
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
 
     strategy:
-      fail-fast: false
+      fail-fast: true
       matrix:
         include:
           - target: x86_64-unknown-linux-musl
@@ -43,8 +102,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.tag }}
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -91,16 +148,17 @@ jobs:
           name: dynoxide-${{ matrix.target }}
           path: dynoxide-${{ matrix.target }}.${{ matrix.archive }}
 
-  release:
-    if: github.repository == 'nubo-db/dynoxide'
-    name: Create Release
-    needs: build
+  # -------------------------------------------------------------------
+  # Create the GitHub Release with artefacts and a changelog body.
+  # -------------------------------------------------------------------
+  github-release:
+    name: Create GitHub Release
+    needs: [validate, build]
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.tag }}
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
@@ -114,11 +172,164 @@ jobs:
           sha256sum *.tar.gz *.zip > sha256sums.txt
           cat sha256sums.txt
 
-      - name: Create GitHub Release
+      - name: Extract changelog body
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: scripts/extract-changelog.sh "$VERSION" CHANGELOG.md > /tmp/release_body.md
+
+      - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ inputs.tag }}
+          tag_name: ${{ needs.validate.outputs.tag }}
+          name: ${{ needs.validate.outputs.tag }}
+          body_path: /tmp/release_body.md
           files: |
             artifacts/*.tar.gz
             artifacts/*.zip
             artifacts/sha256sums.txt
+
+  # -------------------------------------------------------------------
+  # Publish to crates.io. Protected by the production-publish environment
+  # so a human must approve before anything is pushed to an external
+  # registry. Approval also unblocks the Homebrew and npm jobs.
+  # -------------------------------------------------------------------
+  publish-crate:
+    name: Publish to crates.io
+    needs: [validate, github-release]
+    environment: production-publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: cargo publish --dry-run
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish --dry-run
+
+      - name: cargo publish
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish
+
+  # -------------------------------------------------------------------
+  # Update the Homebrew tap formula. Runs only after crates.io succeeds.
+  # -------------------------------------------------------------------
+  publish-homebrew:
+    name: Update Homebrew tap
+    needs: [validate, publish-crate]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Download checksums from release
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          TAG: ${{ needs.validate.outputs.tag }}
+        run: |
+          gh release download "$TAG" \
+            --repo nubo-db/dynoxide \
+            --pattern 'sha256sums.txt' \
+            --output sha256sums.txt
+
+      - name: Build formula
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          SHA_DARWIN_ARM64=$(grep 'aarch64-apple-darwin' sha256sums.txt | awk '{print $1}')
+          SHA_DARWIN_X64=$(grep 'x86_64-apple-darwin' sha256sums.txt | awk '{print $1}')
+          SHA_LINUX_ARM64=$(grep 'aarch64-unknown-linux-musl' sha256sums.txt | awk '{print $1}')
+          SHA_LINUX_X64=$(grep 'x86_64-unknown-linux-musl' sha256sums.txt | awk '{print $1}')
+          for var in SHA_DARWIN_ARM64 SHA_DARWIN_X64 SHA_LINUX_ARM64 SHA_LINUX_X64; do
+            if [[ -z "${!var}" ]]; then
+              echo "::error::Missing checksum for $var"
+              exit 1
+            fi
+          done
+          BASE="https://github.com/nubo-db/dynoxide/releases/download/v${VERSION}"
+          cat <<FORMULA | sed 's/^  //' > formula.rb
+            class Dynoxide < Formula
+              desc "Fast, lightweight drop-in replacement for DynamoDB Local, backed by SQLite"
+              homepage "https://dynoxide.dev"
+              version "${VERSION}"
+              license any_of: ["MIT", "Apache-2.0"]
+              on_macos do
+                on_arm do
+                  url "${BASE}/dynoxide-aarch64-apple-darwin.tar.gz"
+                  sha256 "${SHA_DARWIN_ARM64}"
+                end
+                on_intel do
+                  url "${BASE}/dynoxide-x86_64-apple-darwin.tar.gz"
+                  sha256 "${SHA_DARWIN_X64}"
+                end
+              end
+              on_linux do
+                on_arm do
+                  url "${BASE}/dynoxide-aarch64-unknown-linux-musl.tar.gz"
+                  sha256 "${SHA_LINUX_ARM64}"
+                end
+                on_intel do
+                  url "${BASE}/dynoxide-x86_64-unknown-linux-musl.tar.gz"
+                  sha256 "${SHA_LINUX_X64}"
+                end
+              end
+              def install
+                bin.install "dynoxide"
+              end
+              test do
+                assert_match version.to_s, shell_output("#{bin}/dynoxide --version")
+              end
+            end
+          FORMULA
+
+      - name: Push formula to tap
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          CURRENT_SHA=$(gh api repos/nubo-db/homebrew-tap/contents/Formula/dynoxide.rb --jq '.sha')
+          gh api repos/nubo-db/homebrew-tap/contents/Formula/dynoxide.rb \
+            -X PUT \
+            --field message="dynoxide $VERSION" \
+            --field content="$(base64 -w0 formula.rb)" \
+            --field sha="$CURRENT_SHA" \
+            --jq '.commit.html_url'
+
+  # -------------------------------------------------------------------
+  # Publish npm packages via OIDC trusted publishing.
+  # -------------------------------------------------------------------
+  publish-npm:
+    name: Publish to npm
+    needs: [validate, publish-crate]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Configure npm registry
+        run: npm config set registry https://registry.npmjs.org
+
+      - name: Install jq
+        run: sudo apt-get install -y jq
+
+      - name: Publish to npm
+        env:
+          PUBLISH_VERSION: ${{ needs.validate.outputs.version }}
+          PUBLISH_TAG: ${{ needs.validate.outputs.tag }}
+        run: |
+          npm/scripts/publish.sh \
+            --version "$PUBLISH_VERSION" \
+            --release-url "https://github.com/nubo-db/dynoxide/releases/download/$PUBLISH_TAG"
