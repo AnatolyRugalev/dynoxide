@@ -366,13 +366,13 @@ fn consume_close_parens(stream: &mut TokenStream, count: usize) -> Result<(), St
             Some(t) => {
                 return Err(format!(
                     "Expected closing parenthesis in KeyConditionExpression, got {t}"
-                ))
+                ));
             }
             None => {
                 return Err(
                     "Unexpected end of KeyConditionExpression, expected closing parenthesis"
                         .to_string(),
-                )
+                );
             }
         }
     }
