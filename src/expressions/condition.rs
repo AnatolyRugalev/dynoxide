@@ -102,7 +102,11 @@ pub fn evaluate(
             let rv = resolve_operand(right, item, tracker)?;
             match (lv, rv) {
                 (Some(l), Some(r)) => Ok(compare_values(&l, op, &r)),
-                _ => Ok(false),
+                // When either operand is missing (attribute doesn't exist):
+                // - <> (not-equals) returns true: a missing value is not equal to anything
+                // - All other comparisons return false: a missing value can't be
+                //   compared for equality, ordering, etc.
+                _ => Ok(matches!(op, CompOp::Ne)),
             }
         }
 
@@ -1304,5 +1308,36 @@ mod tests {
         let item: HashMap<String, AttributeValue> = HashMap::new();
         let av = vals(&[(":val", AttributeValue::S("x".into()))]);
         assert!(!evaluate_without_tracking(&expr, &item, &None, &av).unwrap());
+    }
+
+    #[test]
+    fn test_missing_attribute_ne_is_true() {
+        let item: HashMap<String, AttributeValue> = HashMap::new();
+        let av = vals(&[(":val", AttributeValue::S("working".into()))]);
+        let expr = parse("nonexistent <> :val").unwrap();
+        assert!(evaluate_without_tracking(&expr, &item, &None, &av).unwrap());
+    }
+
+    #[test]
+    fn test_missing_attribute_comparisons() {
+        let item: HashMap<String, AttributeValue> = HashMap::new();
+        let av = vals(&[(":val", AttributeValue::S("x".into()))]);
+        for (op, expected) in [
+            ("=", false),
+            ("<>", true),
+            ("<", false),
+            ("<=", false),
+            (">", false),
+            (">=", false),
+        ] {
+            let expr = parse(&format!("nonexistent {} :val", op)).unwrap();
+            assert_eq!(
+                evaluate_without_tracking(&expr, &item, &None, &av).unwrap(),
+                expected,
+                "operator {} on missing attribute should be {}",
+                op,
+                expected
+            );
+        }
     }
 }

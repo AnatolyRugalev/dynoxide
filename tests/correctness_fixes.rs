@@ -730,3 +730,58 @@ fn test_c3_partiql_number_comparison_precision() {
         "PartiQL comparison with different last digit should not match"
     );
 }
+
+/// PutItem with `<>` condition on a missing attribute should succeed.
+/// A missing attribute is not equal to any value, so `status <> "working"`
+/// is true when the item has no `status` attribute.
+#[test]
+fn test_ne_on_missing_attribute_returns_true() {
+    let db = Database::memory().unwrap();
+    let req: serde_json::Value = serde_json::json!({
+        "TableName": "ne-missing",
+        "KeySchema": [{"AttributeName": "pk", "KeyType": "HASH"}],
+        "AttributeDefinitions": [{"AttributeName": "pk", "AttributeType": "S"}]
+    });
+    db.create_table(serde_json::from_value(req).unwrap())
+        .unwrap();
+
+    // PutItem with condition: status <> "working" on a non-existent item.
+    let req: serde_json::Value = serde_json::json!({
+        "TableName": "ne-missing",
+        "Item": {"pk": {"S": "item1"}, "status": {"S": "idle"}},
+        "ConditionExpression": "#s <> :v",
+        "ExpressionAttributeNames": {"#s": "status"},
+        "ExpressionAttributeValues": {":v": {"S": "working"}}
+    });
+    db.put_item(serde_json::from_value(req).unwrap()).unwrap();
+
+    let req: serde_json::Value = serde_json::json!({
+        "TableName": "ne-missing",
+        "Key": {"pk": {"S": "item1"}}
+    });
+    let resp = db.get_item(serde_json::from_value(req).unwrap()).unwrap();
+    assert!(resp.item.is_some(), "item should have been created");
+
+    // OR with <> and < on missing attributes — OR should short-circuit
+    let req: serde_json::Value = serde_json::json!({
+        "TableName": "ne-missing",
+        "Item": {"pk": {"S": "item2"}, "status": {"S": "new"}},
+        "ConditionExpression": "#s <> :v OR #u < :t",
+        "ExpressionAttributeNames": {"#s": "status", "#u": "updatedAt"},
+        "ExpressionAttributeValues": {
+            ":v": {"S": "working"},
+            ":t": {"S": "2099-01-01T00:00:00Z"}
+        }
+    });
+    db.put_item(serde_json::from_value(req).unwrap()).unwrap();
+
+    let req: serde_json::Value = serde_json::json!({
+        "TableName": "ne-missing",
+        "Key": {"pk": {"S": "item2"}}
+    });
+    let resp = db.get_item(serde_json::from_value(req).unwrap()).unwrap();
+    assert!(
+        resp.item.is_some(),
+        "item2 should have been created via OR short-circuit"
+    );
+}
